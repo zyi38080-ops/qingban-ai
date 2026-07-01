@@ -1,6 +1,12 @@
 import { useState, useEffect } from 'react';
 import { type PrivacySettings, loadPrivacySettings, savePrivacySettings, clearLocalData, PRIVACY_DEFAULTS } from '../utils/privacy';
 
+const STYLE_OPTIONS = [
+  { value: 'gentle', label: '🌿 温和', desc: '体贴细致，多一些关怀' },
+  { value: 'brief', label: '💎 简洁', desc: '言简意赅，直达重点' },
+  { value: 'action', label: '🎯 行动导向', desc: '聚焦解决方案和具体步骤' },
+];
+
 export default function PrivacyPanel() {
   const [settings, setSettings] = useState<PrivacySettings>(PRIVACY_DEFAULTS);
   const [saved, setSaved] = useState(false);
@@ -28,24 +34,27 @@ export default function PrivacyPanel() {
 
   return (
     <div className="privacy-panel">
-      <h3>🔒 隐私设置</h3>
-      <p className="privacy-default-note">
-        默认不保存聊天内容、不保存真实身份信息。以下设置仅在您主动授权后生效。
-      </p>
+      <h3>🔒 隐私中心</h3>
+      <p className="privacy-subtitle">你的隐私，由你掌控。以下设置仅在本地浏览器生效。</p>
+
+      <div className="privacy-default-note">
+        💡 <strong>默认隐私保护：</strong>不保存聊天内容、不保存真实身份信息、不保存手机号/学校/住址/账号密码。
+        用户未授权前，不保存任何记忆。
+      </div>
 
       <div className="privacy-field">
-        <label>昵称（可选）</label>
+        <label>📝 昵称（可选）</label>
         <input
           type="text"
           value={settings.nickname}
           onChange={(e) => update('nickname', e.target.value)}
-          placeholder="输入一个代号即可"
+          placeholder="输入一个代号即可，不必用真名"
           maxLength={20}
         />
       </div>
 
       <div className="privacy-field">
-        <label>希望被如何称呼</label>
+        <label>👋 希望被如何称呼</label>
         <input
           type="text"
           value={settings.preferredName}
@@ -56,14 +65,14 @@ export default function PrivacyPanel() {
       </div>
 
       <div className="privacy-field">
-        <label>回复风格</label>
+        <label>💬 回复风格偏好</label>
         <select
           value={settings.replyStyle}
           onChange={(e) => update('replyStyle', e.target.value)}
         >
-          <option value="gentle">温和</option>
-          <option value="brief">简洁</option>
-          <option value="action">行动导向</option>
+          {STYLE_OPTIONS.map((opt) => (
+            <option key={opt.value} value={opt.value}>{opt.label} — {opt.desc}</option>
+          ))}
         </select>
       </div>
 
@@ -74,7 +83,7 @@ export default function PrivacyPanel() {
             checked={settings.allowSavePlan}
             onChange={(e) => update('allowSavePlan', e.target.checked)}
           />
-          允许保存行动计划
+          📋 允许保存行动计划到本地
         </label>
       </div>
 
@@ -85,15 +94,15 @@ export default function PrivacyPanel() {
             checked={settings.allowSavePreferences}
             onChange={(e) => update('allowSavePreferences', e.target.checked)}
           />
-          允许保存偏好设置
+          💾 允许保存偏好设置（下次访问时恢复）
         </label>
       </div>
 
       <button className="clear-btn" onClick={handleClear}>
-        🗑️ 清空本地数据
+        🗑️ 清空所有本地数据
       </button>
 
-      {saved && <div className="save-indicator">✓ 已保存</div>}
+      {saved && <div className="save-indicator">✅ 设置已保存</div>}
     </div>
   );
 }

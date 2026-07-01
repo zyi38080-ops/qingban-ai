@@ -11,11 +11,21 @@ interface Message {
   role: 'user' | 'assistant' | 'system';
   content: string;
   sanitizeResult?: SanitizeResult;
+  time: string;
 }
 
 interface ChatWindowProps {
   isDemoMode: boolean;
 }
+
+const WELCOME_SUGGESTIONS = [
+  '我晚上总是玩游戏到很晚',
+  '我控制不住充值怎么办',
+  '因为游戏和父母吵架了',
+  '帮我制定一个早睡计划',
+  '我是不是有游戏成瘾',
+  '怎么减少玩游戏的时间',
+];
 
 const DEMO_REPLIES = [
   `【回应】
@@ -57,13 +67,12 @@ const DEMO_REPLIES = [
 
 let demoReplyIndex = 0;
 
+function getTime() {
+  return new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+}
+
 export default function ChatWindow({ isDemoMode }: ChatWindowProps) {
-  const [messages, setMessages] = useState<Message[]>([
-    {
-      role: 'assistant',
-      content: '你好，我是晴伴。我在这里陪你聊聊关于游戏、时间、心情或者你想聊的任何事情。你想从什么开始呢？',
-    },
-  ]);
+  const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [knowledgeItems, setKnowledgeItems] = useState<KnowledgeItem[]>([]);
@@ -72,21 +81,23 @@ export default function ChatWindow({ isDemoMode }: ChatWindowProps) {
   const [sanitizeNotice, setSanitizeNotice] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
+  const hasMessages = messages.length > 0;
+
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  const handleSend = async () => {
-    if (!input.trim() || isLoading) return;
+  const handleSend = async (text?: string) => {
+    const userText = (text || input).trim();
+    if (!userText || isLoading) return;
 
-    const userText = input.trim();
     setInput('');
 
     // 1. 隐私脱敏
     const sanitizeResult = sanitizeInput(userText);
     setSanitizeNotice(
       sanitizeResult.hidden.length > 0
-        ? `系统已自动隐藏可能的敏感信息：${sanitizeResult.hidden.join('、')}`
+        ? `🔒 系统已自动隐藏可能的敏感信息：${sanitizeResult.hidden.join('、')}`
         : ''
     );
 
@@ -95,8 +106,8 @@ export default function ChatWindow({ isDemoMode }: ChatWindowProps) {
     if (riskResult.isHighRisk) {
       setMessages((prev) => [
         ...prev,
-        { role: 'user', content: userText, sanitizeResult },
-        { role: 'system', content: SAFETY_MESSAGE },
+        { role: 'user', content: userText, sanitizeResult, time: getTime() },
+        { role: 'system', content: SAFETY_MESSAGE, time: getTime() },
       ]);
       setShowSafety(true);
       setKnowledgeItems([]);
@@ -106,7 +117,7 @@ export default function ChatWindow({ isDemoMode }: ChatWindowProps) {
     setShowSafety(false);
 
     // 添加用户消息
-    setMessages((prev) => [...prev, { role: 'user', content: userText, sanitizeResult }]);
+    setMessages((prev) => [...prev, { role: 'user', content: userText, sanitizeResult, time: getTime() }]);
 
     // 3. 知识库检索
     const knowledge = retrieveKnowledge(sanitizeResult.sanitized);
@@ -120,29 +131,24 @@ export default function ChatWindow({ isDemoMode }: ChatWindowProps) {
 
     try {
       if (isDemoMode) {
-        // Demo Mode: 轮换固定回复
-        await new Promise((r) => setTimeout(r, 800));
+        await new Promise((r) => setTimeout(r, 900));
         const reply = DEMO_REPLIES[demoReplyIndex % DEMO_REPLIES.length];
         demoReplyIndex++;
-        setMessages((prev) => [...prev, { role: 'assistant', content: reply }]);
+        setMessages((prev) => [...prev, { role: 'assistant', content: reply, time: getTime() }]);
       } else {
-        // 真实 API 调用
         const knowledgeContext = formatKnowledgeContext(knowledge);
         const fullPrompt = QINGBAN_SYSTEM_PROMPT.replace('{knowledgeContext}', knowledgeContext);
 
         const apiKey = import.meta.env.VITE_DASHSCOPE_API_KEY;
         const workerUrl = import.meta.env.VITE_API_BASE_URL;
 
-        // 优先使用 Worker 代理，其次直接调用 DashScope（仅本地开发）
         let apiUrl: string;
         let headers: Record<string, string>;
 
         if (workerUrl) {
-          // 通过 Cloudflare Worker 代理（生产环境）
           apiUrl = workerUrl;
           headers = { 'Content-Type': 'application/json' };
         } else if (apiKey) {
-          // 直接调用 DashScope API（本地开发）
           apiUrl = 'https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions';
           headers = {
             'Content-Type': 'application/json',
@@ -170,10 +176,10 @@ export default function ChatWindow({ isDemoMode }: ChatWindowProps) {
         if (!response.ok) throw new Error('API error');
         const data = await response.json();
         const assistantReply = data.choices?.[0]?.message?.content || '抱歉，我暂时无法回应，请稍后再试。';
-        setMessages((prev) => [...prev, { role: 'assistant', content: assistantReply }]);
+        setMessages((prev) => [...prev, { role: 'assistant', content: assistantReply, time: getTime() }]);
       }
     } catch {
-      setMessages((prev) => [...prev, { role: 'assistant', content: '抱歉，我暂时无法回应。请检查网络连接后重试。' }]);
+      setMessages((prev) => [...prev, { role: 'assistant', content: '抱歉，我暂时无法回应。请检查网络连接后重试。', time: getTime() }]);
     } finally {
       setIsLoading(false);
     }
@@ -181,50 +187,81 @@ export default function ChatWindow({ isDemoMode }: ChatWindowProps) {
 
   return (
     <div className="chat-section">
-      <div className="chat-messages">
-        {messages.map((msg, i) => (
-          <div key={i} className={`message ${msg.role}`}>
-            <div className="message-role">
-              {msg.role === 'user' ? '你' : msg.role === 'system' ? '⚠️ 系统' : '晴伴'}
-            </div>
-            <div className="message-content">
-              {msg.content.split('\n').map((line, j) => (
-                <p key={j}>{line}</p>
-              ))}
-            </div>
-            {msg.sanitizeResult && msg.sanitizeResult.hidden.length > 0 && (
-              <div className="sanitize-badge">
-                🔒 已隐藏：{msg.sanitizeResult.hidden.join('、')}
+      {/* 欢迎屏 或 消息区 */}
+      {!hasMessages ? (
+        <div className="welcome-screen">
+          <div className="welcome-avatar">☀️</div>
+          <h2 className="welcome-title">你好，我是晴伴</h2>
+          <p className="welcome-desc">
+            我在这里陪你聊聊关于游戏、时间、心情或者你想聊的任何事情。
+            我不会评判你，也不会给你贴标签。你可以放心地说出你的想法。
+          </p>
+          <div className="welcome-suggestions">
+            {WELCOME_SUGGESTIONS.map((s) => (
+              <button key={s} className="suggestion-chip" onClick={() => handleSend(s)}>
+                {s}
+              </button>
+            ))}
+          </div>
+        </div>
+      ) : (
+        <div className="chat-messages">
+          {messages.map((msg, i) => (
+            <div key={i} className={`message ${msg.role}`}>
+              <div className="message-avatar">
+                {msg.role === 'user' ? '👤' : msg.role === 'system' ? '⚠️' : '☀️'}
               </div>
-            )}
-          </div>
-        ))}
-        {isLoading && (
-          <div className="message assistant">
-            <div className="message-role">晴伴</div>
-            <div className="message-content typing">正在输入...</div>
-          </div>
-        )}
-        <div ref={messagesEndRef} />
-      </div>
-
-      {sanitizeNotice && (
-        <div className="privacy-notice">🔒 {sanitizeNotice}</div>
+              <div className="message-body">
+                <div className="message-header">
+                  <span className="message-sender">
+                    {msg.role === 'user' ? '你' : msg.role === 'system' ? '系统安全提示' : '晴伴'}
+                  </span>
+                  <span className="message-time">{msg.time}</span>
+                </div>
+                <div className="message-bubble">
+                  {msg.content.split('\n').map((line, j) => (
+                    <p key={j}>{line || ' '}</p>
+                  ))}
+                </div>
+                {msg.sanitizeResult && msg.sanitizeResult.hidden.length > 0 && (
+                  <div className="sanitize-badge">
+                    🔒 已隐藏：{msg.sanitizeResult.hidden.join('、')}
+                  </div>
+                )}
+              </div>
+            </div>
+          ))}
+          {isLoading && (
+            <div className="message assistant">
+              <div className="message-avatar">☀️</div>
+              <div className="message-body">
+                <div className="message-header">
+                  <span className="message-sender">晴伴</span>
+                </div>
+                <div className="message-bubble">
+                  <div className="typing-dots">
+                    <span /><span /><span />
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+          <div ref={messagesEndRef} />
+        </div>
       )}
 
-      {isDemoMode && (
-        <div className="demo-mode-banner">📢 {DEMO_MODE_MESSAGE}</div>
-      )}
-
+      {/* 通知和卡片 */}
+      {sanitizeNotice && <div className="privacy-notice">{sanitizeNotice}</div>}
+      {isDemoMode && <div className="demo-mode-banner">📢 {DEMO_MODE_MESSAGE}</div>}
       {knowledgeItems.length > 0 && <KnowledgeCard items={knowledgeItems} />}
       {actionPlan && <PlanCard plan={actionPlan} />}
-
       {showSafety && (
         <div className="safety-banner">
           ⚠️ 系统无法替代紧急帮助。如果你正在经历危险，请立即联系可信任的家人、老师或当地紧急服务。
         </div>
       )}
 
+      {/* 输入区 */}
       <div className="chat-input-area">
         <textarea
           value={input}
@@ -235,12 +272,16 @@ export default function ChatWindow({ isDemoMode }: ChatWindowProps) {
               handleSend();
             }
           }}
-          placeholder="在这里输入你想说的话...（按 Enter 发送，Shift+Enter 换行）"
-          rows={3}
+          placeholder="在这里输入你想说的话...（Enter 发送 / Shift+Enter 换行）"
+          rows={2}
           disabled={isLoading}
         />
-        <button onClick={handleSend} disabled={isLoading || !input.trim()}>
-          {isLoading ? '发送中...' : '发送'}
+        <button
+          className="send-btn"
+          onClick={() => handleSend()}
+          disabled={isLoading || !input.trim()}
+        >
+          {isLoading ? '发送中' : '发送 ✨'}
         </button>
       </div>
     </div>
